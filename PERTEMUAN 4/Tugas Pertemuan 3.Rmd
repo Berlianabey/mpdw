@@ -1,0 +1,387 @@
+---
+title: "MPDW 4"
+author: "Berliana Destari Hermansyah"
+date: "2025-09-15"
+output: 
+  html_document:
+    toc: true          
+    toc_float: true    
+    number_sections: true  
+---
+
+<style>
+body {
+  background-color:lightpink
+}
+
+h1, h2, h3 {
+  color: navy !important;
+}
+</style>
+
+### Import Data
+
+```{r}
+library(dLagM)
+library(dynlm)
+library(MLmetrics)
+library(lmtest)
+library(car)
+```
+
+```{r}
+dataAQI <- read.csv("C:/Users/MSI I5/Downloads/NewDelhi_Air_quality.csv")
+dataAQI
+str(dataAQI)
+```
+```{r}
+dataAQI
+```
+
+### Pembagian Data
+```{r}
+#Split Data
+train <- dataAQI[1:50,]
+test <- dataAQI[51:71,]
+```
+
+```{r}
+#Data Time Series
+train.ts<-ts(train)
+test.ts<-ts(test)
+data.ts<-ts(dataAQI)
+```
+
+
+```{r}
+# Model Koyck dengan intercept
+model.koyck <- koyckDlm(
+  x = train$pm10,
+  y = train$AQI,
+  intercept = TRUE
+)
+
+# Lihat ringkasan model
+summary(model.koyck)
+
+
+```
+
+```{r}
+AIC(model.koyck)
+```
+```{r}
+BIC(model.koyck)
+```
+Persamaan model (estimasi Koyck):
+$$\hat{Y}_t = 0.4648 + 0.2445\,X_t + 0.8994\,Y_{t-1}$$
+
+
+- (Intercept) = 0.46475 ; Std. Error = 1.91295 ; p-value = 0.8091  (tidak signifikan)
+- Y_{t-1}     = 0.89937 ; Std. Error = 0.05745 ; p-value < 2e-16  (sangat signifikan)  ***
+- X_t (pm10)  = 0.24454 ; Std. Error = 0.11332 ; p-value = 0.0362   (signifikan pada α = 5%)  *
+
+- Dari hasil tersebut, peubah X_t (pm10) dan Y_{t-1} memiliki p-value < 0.05 (untuk X_t p = 0.0362; untuk Y_{t-1} p < 2e-16). Ini menunjukkan bahwa keduanya berpengaruh signifikan terhadap Y (AQI) pada data pelatihan.
+- Koefisien short-run untuk pm10 sebesar **0.2445** berarti: kenaikan 1 satuan pm10 diasosiasikan dengan kenaikan AQI sebesar ~0.2445 poin saat ini, ceteris paribus.
+- Koefisien lag AQI (Y_{t-1}) sebesar **0.8994** menunjukkan **persistensi tinggi**: ~89.94% dari nilai AQI sebelumnya terbawa ke periode sekarang. Ini menandakan akumulasi efek polusi antar periode.
+- **Long-run effect** (akumulasi efek pm10 lewat mekanisme lag) dihitung:
+  \[
+  \text{Long-run effect} = \frac{\beta}{1-\phi} = \frac{0.24454}{1 - 0.89937} \approx 2.4301.
+  \]
+  Artinya: kenaikan 1 satuan pm10 akan menaikkan AQI sekitar **2.43 poin** dalam jangka panjang setelah efek lag terakumulasi.
+- R^2 = 0.843 mengindikasikan model menjelaskan ~84.3% variasi AQI pada sample training dengan fit yang baik.
+
+### Peramalan dan Akurasi
+```{r}
+fore.koyck <- forecast(model = model.koyck, x=test$pm10, h=21)
+fore.koyck
+```
+1. Prediksi awal sekitar 26.86 lalu sempat turun ke titik terendah sekitar 24.32–24.37 (periode ke-11/12).
+2. Setelah itu, AQI diperkirakan naik kembali hingga mencapai 28.69 pada periode ke-21.
+3. Pola ini menunjukkan fluktuasi sementara diikuti tren kenaikan jangka menengah.
+
+```{r}
+mape.koyck <- MAPE(fore.koyck$forecasts, test$AQI)
+mape.koyck
+```
+MAPE = 0.1357 (13.57%) → error prediksi relatif rendah (<15%), menandakan model cukup akurat untuk peramalan AQI berbasis pm10. Dari output training (model.koyck):
+1. R² training ≈ 0.843 → model menjelaskan ~84.3% variasi data training.
+2. RMSE training ≈ 0.666 → rata-rata kesalahan prediksi sekitar 0.67 poin AQI.
+3. Bias ≈ -0.001 → prediksi tidak sistematis under/overestimate.
+4. Theil’s U ≈ 0.78 (<1) → model peramalan lebih baik daripada naive forecast.
+
+```{r}
+# Akurasi data training
+GoF(model.koyck)
+```
+1. Fluktuasi AQI dipengaruhi dinamika pm10; meski ada penurunan di tengah periode, efek lag menyebabkan tren jangka menengah kembali naik.
+2. Persistensi tinggi (lag AQI signifikan) membuat perubahan kualitas udara tidak cepat hilang — ada efek bertahan dari polusi.
+3. Akurasi model (MAPE ~13.6%) cukup baik, sehingga model layak digunakan untuk monitoring jangka pendek–menengah kualitas udara.
+
+### Regression with Distributed Lag
+```{r}
+# Distributed Lag Model dengan 2 lag untuk pm10
+model.dlm <- dlm(
+  formula = AQI ~ pm10,
+  data = train,
+  q = 2
+)
+summary(model.dlm)
+
+```
+Dari hasil estimasi Distributed Lag Model dengan dua lag, diperoleh persamaan:
+
+$$
+\hat{Y_t}=22.7066-0.0097X_t-0.2355X_t-1+0.7331_{t-2}
+$$
+cukup besar secara numerik, meskipun tidak signifikan. Hal ini bisa mengindikasikan adanya efek tertunda dari polutan pm10 terhadap AQI.
+
+Namun, secara keseluruhan, model distributed lag (q = 2) tidak lebih unggul dibandingkan model Koyck, baik dari segi kesesuaian data maupun efisiensi model.
+
+
+### Peramalan dan Akurasi
+```{r}
+fore.dlm <- forecast(model = model.dlm, x=test$pm10, h=21)
+fore.dlm
+```
+```{r}
+mape.dlm <- MAPE(fore.dlm$forecasts, test$AQI)
+mape.dlm
+```
+```{r}
+# Akurasi data training
+GoF(model.dlm)
+```
+
+### Lag Optimum
+```{r}
+finiteDLMauto(formula = AQI ~ pm10,
+              data = train, q.min = 1, q.max = 10,
+              model.type = "dlm", error.type = "AIC", trace = TRUE)
+```
+Berdasarkan output tersebut, lag optimum didapatkan ketika lag q =10 Selanjutnya dilakukan pemodelan untuk lag=10. Setelah diperoleh panjang lag optimum q = 10, hasil estimasi menunjukkan bahwa hampir semua koefisien lag tidak signifikan meskipun model signifikan secara keseluruhan. Hal ini mengindikasikan adanya multikolinearitas antar lag yang membuat estimasi tidak efisien. Untuk mengatasi hal tersebut, digunakan pendekatan Polynomial Distributed Lag (Almon Lag), yang memaksa koefisien lag mengikuti bentuk polinomial, sehingga jumlah parameter berkurang dan masalah multikolinearitas dapat diminimalkan.
+
+```{r}
+#model dlm dengan lag optimum
+model.dlm2 <- dlm(x = train$pm10,y = train$AQI , q = 10)
+summary(model.dlm2)
+```
+Secara individual, hampir semua koefisien lag tidak signifikan (p-value jauh di atas 0.05), meskipun terdapat beberapa lag dengan nilai estimasi cukup besar seperti lag ke-2, ke-3, dan ke-6, namun tetap tidak signifikan secara statistik. Kondisi ini mengindikasikan adanya kemungkinan multikolinearitas antar lag yang menyebabkan pengaruh masing-masing variabel sulit dibedakan secara jelas. Dari sisi residual, penyebaran error relatif moderat dengan standar error sebesar 1.796 dan median residual yang mendekati nol, sehingga model tidak menunjukkan pola error yang terlalu menyimpang. Namun, jika dilihat dari kriteria pemilihan model, nilai AIC sebesar 172,10 dan BIC sebesar 194,06 menunjukkan bahwa model dengan jumlah lag sebanyak ini mungkin terlalu kompleks. Dengan demikian, meskipun model secara keseluruhan dapat menjelaskan hubungan yang ada, diperlukan pemangkasan jumlah lag atau penggunaan pendekatan alternatif seperti distributed lag atau Almon lag agar hasilnya lebih efisien dan interpretatif.
+
+```{r}
+#peramalan dan akurasi
+fore.dlm2 <- forecast(model = model.dlm2, x=test$pm10, h=21)
+
+#akurasi data test
+mape.dlm2<- MAPE(fore.dlm2$forecasts, test$AQI)
+mape.dlm2
+```
+```{r}
+# Akurasi data training
+GoF(model.dlm2)
+```
+Hasil estimasi distributed lag dengan panjang lag sepuluh (q = 10) menunjukkan bahwa meskipun koefisien individual tidak signifikan, model secara keseluruhan signifikan (p-value uji F = 0,0137). Nilai R² sebesar 0,5235 mengindikasikan model mampu menjelaskan sekitar 52% variasi AQI, dan nilai MAPE yang rendah (≈4,3%) menunjukkan akurasi prediksi cukup baik. Dengan AIC = 172,10 dan BIC = 194,06 yang lebih rendah dibandingkan model dengan lag lebih pendek, lag sepuluh dapat dianggap sebagai model optimum dalam menangkap pengaruh pm10 terhadap AQI.
+
+### Model Autoregressive
+```{r}
+library(dLagM)
+
+# Contoh ARDL(1,1) dengan peubah X (pm10) dan Y (AQI)
+model.ardl <- ardlDlm(
+  formula = AQI ~ pm10,  # hubungan variabel
+  data = train,          # dataset training
+  p = 1,                 # orde lag dari Y
+  q = 1                  # orde lag dari X
+)
+
+summary(model.ardl)
+
+```
+```{r}
+model.ardl <- ardlDlm(formula = AQI ~ pm10, 
+                         data = train,p = 1 , q = 1)
+summary(model.ardl)
+```
+```{r}
+AIC(model.ardl)
+```
+```{r}
+BIC(model.ardl)
+```
+Hasil estimasi menunjukkan bahwa hanya lag variabel dependen yang signifikan (p-value < 0.001), sedangkan peubah pm10t dan pm10-t memiliki p-value > 0.05 sehingga tidak signifikan. Hal ini menegaskan bahwa variasi AQI saat ini lebih banyak dijelaskan oleh nilai AQI pada periode sebelumnya, bukan oleh perubahan konsentrasi pm10 secara langsung. Model keseluruhan signifikan (F-statistic = 81.76, p-value < 0.001) dengan 
+𝑅2 = 0.845 dan Adjusted R2 = 0.8346. Artinya, sekitar 84.5% variasi AQI dapat dijelaskan oleh model. Residual standard error sebesar 0.918 relatif kecil, mengindikasikan kesesuaian model yang baik.
+
+Persamaan model yang diperoleh adalah:
+
+$$
+\hat{Y_t}=0.9532+0.1035X_t+0.1206X_t-1+0.880Y_t-1
+$$
+
+Koefisien lag AQI yang tinggi (0.888) menunjukkan adanya persistensi kuat: nilai AQI saat ini sangat dipengaruhi oleh nilai periode sebelumnya. Dengan kata lain, kualitas udara cenderung memiliki efek bertahan dari waktu ke waktu
+
+### Peramalan dan Akurasi
+```{r}
+fore.ardl <- forecast(model = model.ardl, x=test$pm10, h=21)
+fore.ardl
+```
+```{r}
+mape.ardl <- MAPE(fore.ardl$forecasts, test$AQI)
+mape.ardl
+```
+```{r}
+# Akurasi data training
+GoF(model.ardl)
+```
+Berdasarkan hasil akurasi di atas, nilai MAPE sebesar 0.0247 (≈ 2.47%) menunjukkan tingkat kesalahan prediksi yang sangat rendah. Hal ini menandakan bahwa model ARDL memiliki kemampuan prediksi yang cukup baik dan stabil. Nilai MAE sekitar 0.669 mengindikasikan bahwa rata-rata kesalahan absolut antara nilai aktual dan prediksi hanya sekitar 0.67 poin AQI, relatif kecil dibandingkan rentang data. Selain itu, nilai MPE yang mendekati nol (-0.0010) memperlihatkan tidak adanya kecenderungan sistematis untuk underestimasi atau overestimasi. Dengan demikian, model ini dapat dikatakan fit secara proporsional terhadap data tanpa indikasi overfitting maupun underfitting.
+
+### Lag Optimum
+```{r}
+#penentuan lag optimum
+model.ardl.opt <- ardlBoundOrders(data = data.frame(dataAQI), ic = "AIC", 
+                                  formula = AQI ~ pm10 )
+model.ardl.opt
+```
+```{r}
+min_p=c()
+for(i in 1:10){
+  min_p[i]=min(model.ardl.opt$Stat.table[[i]])
+}
+q_opt=which(min_p==min(min_p, na.rm = TRUE))
+p_opt=which(model.ardl.opt$Stat.table[[q_opt]] == 
+              min(model.ardl.opt$Stat.table[[q_opt]], na.rm = TRUE))
+data.frame("q_optimum" = q_opt, "p_optimum" = p_opt, 
+           "AIC"=model.ardl.opt$min.Stat)
+```
+Dari tabel di atas, dapat terlihat bahwa nilai AIC terendah didapat ketika p=13 dan q=1, yaitu sebesar 117.5522. Artinya, model autoregressive optimum didapat ketika p=6 dan q=1
+
+### Pemodelan DLM & ARDL dengan library dynlm
+```{r}
+train_df <- data.frame(
+  AQI = train$AQI,
+  ipm10 = train$pm10
+)
+
+```
+
+```{r}
+# DLM q=1
+cons_lm1 <- dynlm(AQI ~ ipm10 + L(ipm10), data = train_df)
+
+# ARDL p=1 q=0
+cons_lm2 <- dynlm(AQI ~ ipm10 + L(ipm10), data = train_df)
+
+# ARDL p=1 q=1
+cons_lm3 <- dynlm(AQI ~ ipm10 + L(ipm10) + L(AQI), data = train_df)
+
+# DLM p=2
+cons_lm4 <- dynlm(AQI ~ ipm10 + L(ipm10) + L(ipm10, 2), data = train_df)
+
+```
+
+### Ringkasan Model
+```{r}
+summary(cons_lm1)
+```
+```{r}
+summary(cons_lm2)
+```
+```{r}
+summary(cons_lm3)
+```
+```{r}
+summary(cons_lm4)
+```
+```{r}
+deviance(cons_lm1)
+deviance(cons_lm2)
+deviance(cons_lm3)
+deviance(cons_lm4)
+
+```
+### Uji encomptest
+
+```{r}
+
+# Buat train_df2 dengan lag variables
+train_df2 <- data.frame(
+  AQI = train$AQI[-1],                    # buang observasi pertama
+  ipm10 = train$pm10[-1],                 # buang observasi pertama  
+  ipm10_lag1 = train$pm10[-nrow(train)],  # lag 1 dari pm10
+  AQI_lag1 = train$AQI[-nrow(train)]      # lag 1 dari AQI
+)
+
+# Sekarang baru jalankan uji encompassing test
+# Model 1: Y ~ X + L(X)
+M1 <- lm(AQI ~ ipm10 + ipm10_lag1, data = train_df2)
+
+# Model 2: Y ~ X + L(Y)
+M2 <- lm(AQI ~ ipm10 + AQI_lag1, data = train_df2)
+
+# Model Encompassing: Y ~ X + L(X) + L(Y)
+ME <- lm(AQI ~ ipm10 + ipm10_lag1 + AQI_lag1, data = train_df2)
+
+# Test encompassing
+anova(M1, ME)
+```
+
+
+### Uji Autokorelasi Residual
+```{r}
+dwtest(cons_lm1)
+dwtest(cons_lm2)
+dwtest(cons_lm3)
+dwtest(cons_lm4)
+```
+
+### Uji Heterogenitas
+```{r}
+bptest(cons_lm1)
+bptest(cons_lm2)
+bptest(cons_lm3)
+bptest(cons_lm4)
+```
+### Uji Normalitas
+```{r}
+shapiro.test(residuals(cons_lm1))
+shapiro.test(residuals(cons_lm2))
+shapiro.test(residuals(cons_lm3))
+shapiro.test(residuals(cons_lm4))
+```
+### Perbandingan Model
+```{r}
+akurasi <- matrix(c(mape.koyck, mape.dlm, mape.dlm2, mape.ardl))
+row.names(akurasi)<- c("Koyck","DLM 1","DLM 2","Autoregressive")
+colnames(akurasi) <- c("MAPE")
+akurasi
+```
+### Plot
+```{r}
+par(mfrow=c(1,1))  # layout tunggal
+
+periode <- 1:length(test$AQI)
+
+# plot data aktual
+plot(periode, test$AQI, type="l", col="black", lwd=2,
+     ylim=c(min(test$AQI, fore.koyck$forecasts, fore.dlm$forecasts, fore.dlm2$forecasts, fore.ardl$forecasts),
+            max(test$AQI, fore.koyck$forecasts, fore.dlm$forecasts, fore.dlm2$forecasts, fore.ardl$forecasts)),
+     xlab="Periode", ylab="AQI", main="Perbandingan Aktual vs Prediksi")
+
+# tambahkan garis prediksi masing-masing model
+lines(periode, fore.koyck$forecasts, col="red", lwd=2)
+lines(periode, fore.dlm$forecasts, col="blue", lwd=2)
+lines(periode, fore.dlm2$forecasts, col="orange", lwd=2)
+lines(periode, fore.ardl$forecasts, col="green", lwd=2)
+
+# legenda
+legend("topleft",
+       legend=c("Aktual", "Koyck","DLM 1","DLM 2", "Autoregressive"),
+       col=c("black","red","blue","orange","green"),
+       lty=1, lwd=2,
+       cex=0.85)
+
+```
+
+Model terbaik dari grafik ini adalah *Autoregressive (hijau).*
+- Stabil, tidak terlalu fluktuatif.
+- Paling mendekati pola aktual baik saat turun maupun naik.
+- Tidak smoothing berlebihan (seperti Koyck) dan tidak berlebihan naik-turun (seperti DLM 2).
