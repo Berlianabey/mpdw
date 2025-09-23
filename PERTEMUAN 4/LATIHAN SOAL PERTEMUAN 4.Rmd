@@ -1,0 +1,783 @@
+---
+title: "LATIHAN SOAL PERTEMUAN 4"
+author: "Berliana Destari Hermansyah"
+date: "2025-09-22"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+<style>
+pre.r, pre.sourceCode.r, code.r {
+  background-color: #ffe6f2 !important; 
+  border-radius: 10px;
+  padding: 10px;
+  overflow-x: auto; 
+  white-space: pre; 
+  font-size: 90%; 
+}
+</style>
+
+### 1. Proses MA(2)
+
+### White Noise
+
+```{r}
+set.seed(1055)
+wns <- rnorm(300)
+ts.plot(wns)
+```
+
+White noise dibangkitkan dengan rnorm(300) menghasilkan deret acak tanpa
+pola tren atau musiman. Plot time series hanya menunjukkan fluktuasi
+acak di sekitar nol.
+
+ACF memperlihatkan lag ke-0 bernilai 1 karena korelasi dengan dirinya
+sendiri. Dengan menambahkan xlim = c(1,20), plot dapat difokuskan mulai
+lag pertama. Kedua plot bisa ditampilkan berdampingan dengan par(mfrow =
+c(1,2)). Hasilnya, seluruh lag di luar 0 berada di sekitar nol dan masuk
+batas signifikansi, menandakan tidak ada autokorelasi sehingga data
+benar-benar white noise.
+
+```{r}
+par(mfrow = c(1, 2)) 
+acf(wns)
+acf(wns, xlim = c(1, 20))
+```
+
+Plot ACF memperlihatkan bahwa korelasi hanya muncul pada lag 0,
+sementara pada lag di atasnya seluruh batang berada di sekitar nol dan
+masuk dalam batas signifikansi. Hal ini menunjukkan *tidak adanya
+autokorelasi yang signifikan.* Dengan demikian, deret ini sepenuhnya
+acak dan tidak mengandung pola yang bisa dimodelkan.
+
+### Proses MA
+
+Proses MA secara umum $$
+y_{t} = c + e_t + \theta_{1}e_{t-1} + \theta_{2}e_{t-2} + \dots + \theta_{q}e_{t-q} = c+{e_t+\sum_{i=1}^p \theta_ie_{t-i}}
+$$ \### Pembangkitan Proses untuk MA (2) Akan dilakukan pembangkitan
+pada proses MA (2) dengan $\theta 1 = 0.4$ dan $\theta 2 = 0.6$ sebanyak
+300 observasi dan $c=0$. Karena diperlukan satu nilai awal untuk
+$e_{t-1}$ serta $e_{t-2}$ maka akan dimasukkan dua nilai pertama white
+noise sebagai nilai awal.
+
+```{r}
+set.seed(1055)
+ma2 <- wns[1:2]
+```
+
+```{r}
+for (i in 3:300) {
+  ma2[i] <- wns[i] + 0.4 * wns[i - 1] + 0.6 * wns[i - 2]
+}
+ma2
+```
+
+### Fungsi arima.sim()
+
+```{r}
+ma_2 <- arima.sim(list(order=c(0,0,2), ma=c(0.4, 0.6)), n=300)
+ma_2
+```
+
+### Karakteristik MA (2)
+
+### Plot Time Series
+
+```{r}
+ts.plot(ma2)
+```
+
+Deret hasil simulasi MA(2) pada grafik tersebut *menunjukkan sifat
+stasioner* baik dalam rataan maupun dalam ragam. Nilai-nilainya
+berfluktuasi di sekitar nol tanpa adanya kecenderungan naik atau turun,
+sehingga rataannya konstan dari waktu ke waktu. Besarnya penyebaran atau
+variasi data juga tampak relatif sama sepanjang rentang observasi,
+sehingga ragamnya konstan.
+
+### Plot ACF
+
+```{r}
+acf(ma2,lag.max = 20)
+```
+
+Berdasarkan dengan plot ACF, korelasi sempurna pada lag-0 memang
+terlihat (nilai 1), sementara pada lag-1 dan lag-2 batang ACF berada di
+luar batas kepercayaan sehingga menunjukkan autokorelasi yang
+signifikan. Setelah lag-2, nilai ACF langsung turun ke sekitar nol dan
+semua batang berikutnya masuk ke dalam batas kepercayaan — pola inilah
+yang disebut cut-off pada dua lag pertama. Secara teoritis, *cut-off
+pada lag ke-k* adalah ciri khas proses MA(k): MA(1) akan cut-off pada
+lag-1, MA(2) pada lag-2, dan seterusnya. Karena autokorelasi hanya
+signifikan sampai lag kedua pada plot ini, pola ACF konsisten dengan
+proses MA(2).
+
+### Plot PACF
+
+```{r}
+pacf(ma2)
+```
+
+Berdasarkan plot PACF tersebut, terlihat bahwa pola PACF tidak berhenti
+tiba-tiba, melainkan *cenderung tails off.* Pola ini menunjukkan bahwa
+nilai PACF berfluktuasi naik-turun dengan kecenderungan membentuk
+*gelombang sinus yang teredam,* di mana amplitudo makin mengecil seiring
+bertambahnya lag dan akhirnya mendekati nol.
+
+### Plot EACF
+
+```{r}
+TSA::eacf(ma2)
+```
+
+Berdasarkan pola segitiga nol pada plot EACF, terlihat bahwa segitiga
+nol berada pada ordo AR(0) dan ordo MA(3).
+
+### Scatterplot Antar Lag
+
+#### Korelasi antara $Y_t$ dengan $Y_{t-1}$
+
+```{r}
+#Yt
+yt_ma <- ma2[-1]
+yt_ma
+```
+
+```{r}
+#Yt-1
+yt_1_ma <- ma2[-300]
+yt_1_ma
+```
+
+```{r}
+plot(y=yt_ma,x=yt_1_ma)
+```
+
+```{r}
+cor(yt_ma,yt_1_ma)
+```
+
+Nilai korelasi 0.359844 menunjukkan ada hubungan positif yang cukup
+lemah sampai sedang antara $y_t$ma dengan$y_t-1$ma Artinya, ketika nilai
+lag sebelumnya meningkat, nilai saat ini cenderung ikut naik meskipun
+tidak selalu konsisten. Scatter plot yang terlihat acak tadi memang
+tidak menunjukkan pola linier yang kuat, tetapi dengan korelasi sekitar
+0.36, masih ada kecenderungan titik-titik membentuk arah diagonal
+positif yang samar. Jadi, meskipun visualnya tampak menyebar, ada
+indikasi ketergantungan moderat antar lag.
+
+#### Korelasi antara $Y_t$ dengan $Y_{t-2}$
+
+```{r}
+#Yt
+yt_ma2 <- ma2[-c(1,2)]
+yt_ma2
+```
+
+```{r}
+#Yt-2
+yt_2_ma <- ma2[-c(299,300)]
+yt_2_ma
+```
+
+```{r}
+plot(y=yt_ma2,x=yt_2_ma)
+```
+
+```{r}
+cor(y=yt_ma2,x=yt_2_ma)
+```
+
+Berdasarkan scatter plot antara $y_t$ma2 dengan $y_t-2$ma2, titik-titik
+terlihat cukup menyebar tanpa pola linier yang jelas. Nilai korelasi
+sebesar 0.2828222 menunjukkan adanya hubungan positif, tetapi lemah.
+Artinya, meskipun ada kecenderungan bahwa peningkatan nilai pada lag
+ke-2 diikuti oleh kenaikan nilai pada periode sekarang, hubungan
+tersebut tidak terlalu kuat. Ketergantungan antar lag ke-2 ada, tetapi
+lebih lemah dibandingkan dengan korelasi pada lag pertama yang
+sebelumnya lebih tinggi.
+
+#### Korelasi antara $Y_t$ dengan $Y_{t-3}$
+
+```{r}
+#Yt
+yt_ma3 <- ma2[-c(1,2,3)]
+yt_ma3
+```
+
+```{r}
+#Yt-2
+yt_3_ma <- ma2[-c(298,299,300)]
+yt_3_ma
+```
+
+```{r}
+plot(y=yt_ma3,x=yt_3_ma)
+```
+
+```{r}
+cor(yt_ma3,yt_3_ma)
+```
+
+Scatter plot antara $y_t$ma3 dan $y_t-3$ma3 terlihat sangat menyebar
+acak tanpa pola linier yang jelas. Nilai korelasi sebesar −0.1413105
+menunjukkan adanya hubungan negatif yang sangat lemah. Artinya, ketika
+nilai pada lag ke-3 meningkat, nilai saat ini cenderung menurun, tetapi
+pengaruhnya hampir tidak signifikan. Dengan demikian, pada lag ke-3
+tidak ada keterkaitan yang berarti, sehingga kontribusi dependensi antar
+waktu pada lag ini bisa dianggap sangat kecil.
+
+### Perhitungan Korelasi Teoritis
+
+$\rho_1 = \frac{0.4 + (0.4)(0.6)}{1 + 0.4^2 + 0.6^2} = 0.4211$
+
+$\rho_2 = \frac{0.6}{1 + 0.4^2 + 0.6^2} = 0.3947$
+
+$\rho_3 = 0$
+
+```{r}
+# Parameter MA(2)
+theta1 <- 0.4
+theta2 <- 0.6
+
+# Varians (gamma0)
+gamma0 <- 1 + theta1^2 + theta2^2
+
+# Gamma1 dan Gamma2
+gamma1 <- theta1 + theta1*theta2
+gamma2 <- theta2
+
+# Autokorelasi teoritis
+rho1 <- gamma1 / gamma0
+rho2 <- gamma2 / gamma0
+rho3 <- 0 # karena k>q dimana q=2 dan k=3
+
+rho1
+rho2
+rho3
+```
+
+Korelasi antara $Y_t$ dengan $Y_t-1$ dan korelasi antara $Y_t$ dengan
+$Y_t-2$ dari hasil simulasi terlihat cukup mendekati nilai perhitungan
+teoritis, yaitu sekitar 0.42 untuk lag pertama dan 0.39 untuk lag kedua.
+Sementara itu, untuk korelasi $Y_t$ dengan $Y_t-3$ secara teori nilainya
+sama dengan nol karena proses yang digunakan adalah MA(2), sehingga
+ketergantungan hanya muncul sampai lag ke-2 saja.
+
+### 2. Proses AR
+
+Proses AR dapat dituliskan sebagai berikut:
+
+$$ y_{t} = c + e_t + \phi_{1}Y_{t-1} + \phi_{2}Y_{t-2} + \dots + \phi_{q}Y_{t-q} = c+{e_t+\sum_{i=1}^p \phi_iY_{t-i}} $$
+Terlihat bahwa $Y_t$ berperan penting dalam pembangkitan proses AR.
+
+### Pembangkitan Proses untuk AR (2)
+
+Akan dilakukan pembangkitan untuk proses AR (2) dengan $\phi = 0.5$ dan
+$\phi = 0.2$ sebanyak 300 observasi dan $c=0$.
+
+$$ Y_t = e_t+0.5Y_{t-1}+0.2Y_{t-2} $$
+
+```{r}
+set.seed(1055)
+```
+
+```{r}
+n <- length(wns)
+n
+```
+
+```{r}
+ar2 <- c(1:n) 
+for (i in 3:n) {
+  ar2[i] <- wns[i] + 0.5 * ar2[i - 1] + 0.2 * ar2[i - 2]
+}
+ar2
+```
+
+###Pembangkitan dengan arima.sim()
+
+```{r}
+ar_2 <- arima.sim(list(order=c(2,0,0), ar=c(0.5, 0.2)), n=300)
+ar_2
+```
+
+### Karakteristik AR(2)
+
+### Plot Time Series
+
+```{r}
+ts.plot(ar2)
+```
+
+Berdasarkan plot deret waktu AR(2) tersebut, terlihat bahwa pola data
+berfluktuasi di sekitar nilai rata-rata nol tanpa adanya kecenderungan
+meningkat ataupun menurun secara konsisten, sehingga dapat dikatakan
+sudah stasioner dalam rataan. Selain itu, penyebaran atau amplitudo
+fluktuasi dari awal hingga akhir deret terlihat relatif stabil, tidak
+menunjukkan adanya pelebaran maupun penyempitan varians yang signifikan.
+Dengan demikian, deret waktu AR(2) ini dapat dikatakan *stasioner baik
+dalam rataan maupun varians.*
+
+### Plot ACF
+
+```{r}
+acf(ar2)
+```
+
+Plot ACF untuk proses AR(2) tersebut menunjukkan bahwa nilai
+autokorelasi pada lag awal (lag 1 dan lag 2) signifikan, kemudian secara
+bertahap mengecil dan mendekati nol seiring bertambahnya lag. Pola ini
+menggambarkan bahwa autokorelasi tidak langsung terputus, melainkan
+menurun perlahan, atau dengan kata lain *tails off.* Hal ini konsisten
+dengan karakteristik umum model AR(p),
+
+### Plot PACF
+
+```{r}
+pacf(ar2)
+```
+
+Plot PACF untuk proses AR(2) memperlihatkan bahwa hanya lag 1 dan lag 2
+yang signifikan, sementara lag berikutnya jatuh di sekitar nol dan
+berada dalam batas kepercayaan. Pola ini menunjukkan bahwa PACF
+mengalami *cut off pada lag ke-2,* yang merupakan ciri khas dari model
+AR(2).
+
+### Plot EACF
+
+```{r}
+TSA::eacf(ar2)
+```
+
+Berdasarkan pola segitiga nol pada plot EACF, terlihat bahwa segitiga
+nol berada pada ordo AR(1) dan ordo MA(1).
+
+### Scatterplot Antar Lag
+
+### Korelasi antara $Y_t$ dengan $Y_t-1$
+
+```{r}
+#Yt
+yt_ar <- ar2[-1]
+yt_ar
+```
+
+```{r}
+#Yt-1
+yt_1_ar <- ar2[-300]
+yt_1_ar
+```
+
+```{r}
+plot(y=yt_ar,x=yt_1_ar)
+```
+
+```{r}
+cor(yt_ar,yt_1_ar)
+```
+
+Scatterplot antara $Y_t$ dengan $Y_t-1$ pada proses AR. Terlihat bahwa
+titik-titik cenderung menyebar mengikuti pola linier positif, artinya
+ketika nilai $Y_t-1$ tinggi maka $Y_t$ juga cenderung tinggi, dan
+sebaliknya. Hal ini mengindikasikan adanya hubungan yang cukup kuat
+antara nilai saat ini dengan nilai sebelumnya. Nilai korelasinya sebesar
+0.5398, yang berarti korelasi positif dengan kekuatan sedang menuju
+kuat.
+
+### Korelasi antara $Y_t$ dengan $Y_t-1$
+
+```{r}
+#Yt
+yt_ar2 <- ar2[-c(1,2)]
+yt_ar2
+```
+
+```{r}
+#Yt-2
+yt_2_ar <- ar2[-c(299,300)]
+yt_2_ar
+```
+
+```{r}
+plot(y=yt_ar2,x=yt_2_ar)
+```
+
+```{r}
+cor(yt_ar2,yt_2_ar)
+```
+
+Scatter plot antara $Y_t$ dengan $Y_t21$ Titik-titik terlihat lebih
+menyebar dibandingkan dengan plot $Y_t$ terhadap $Y_t-1$ meskipun masih
+ada kecenderungan pola positif. Artinya, nilai sekarang$Y_t$ masih
+dipengaruhi oleh nilai dua periode sebelumnya $Y_t-1=2$ tetapi
+kekuatannya lebih lemah. Nilai korelasinya sebesar 0.3664, yang
+menunjukkan korelasi positif sedang. Ini konsisten dengan karakteristik
+model AR(2), di mana pengaruh $Y_t-2$ masih ada tetapi tidak sekuat
+pengaruh $Y_t-1$
+
+### Korelasi antara $Y_t$ dengan $Y_t-3$
+
+```{r}
+#Yt
+yt_ar3 <- ar2[-c(1,2,3)]
+yt_ar3
+```
+
+```{r}
+#Yt-2
+yt_3_ar <- ar2[-c(298,299,300)]
+yt_3_ar
+```
+
+```{r}
+plot(y=yt_ar3,x=yt_3_ar)
+```
+
+```{r}
+cor(yt_ar3,yt_3_ar)
+```
+
+Scatter plot antara $Y_t$ dengan $Y_t-3$, titik-titik terlihat cukup
+menyebar acak, dengan pola yang jauh lebih lemah dibandingkan pada lag 1
+maupun lag 2. Hal ini menandakan bahwa pengaruh nilai tiga periode
+sebelumnya $Y_t-3$ terhadap nilai saat ini $Y_t$ semakin berkurang.
+Nilai korelasinya sebesar 0.2284, yang berarti korelasi positif tetapi
+relatif lemah.
+
+### Perhitungan Korelasi Teoritis
+
+$$
+\rho_1=\frac{\phi_1}{1-\phi_2}=\frac{0.5}{1-0.2}=\frac{0.5}{0.8}=0.625
+$$
+
+$$
+\rho_2=\phi_1\rho_1+\phi_2=(0.5)(0.625)+0.2=0.3125+0.2=0.5125
+$$
+
+$$
+\rho_3=\phi_1\rho_2+\phi_2\rho_1=(0.5)(0.5125)+(0.2)(0.625)=0.25625+0.125=0.38125
+$$
+
+```{r}
+# Parameter AR(2)
+phi1 <- 0.5
+phi2 <- 0.2
+sigma2 <- 1   # varians white noise (tidak mempengaruhi rho)
+
+# Autokorelasi teoritis sampai lag 3
+rho1 <- phi1 / (1 - phi2)
+rho2 <- phi1 * rho1 + phi2
+rho3 <- phi1 * rho2 + phi2 * rho1
+
+round(c(rho1 = rho1, rho2 = rho2, rho3 = rho3), 6)
+
+```
+
+Korelasi pada lag pertama sebesar 0.625 menunjukkan adanya hubungan
+positif yang cukup kuat antara nilai $Y_t$ₜ dan $Y_t-1$, sehingga nilai
+sekarang masih sangat dipengaruhi oleh periode sebelumnya. Pada lag
+kedua, korelasi menurun menjadi 0.3125, yang berarti pengaruh dua
+periode sebelumnya masih ada, tetapi melemah dibandingkan lag pertama.
+Selanjutnya pada lag ketiga, korelasi kembali melemah menjadi 0.15625,
+menandakan bahwa ketergantungan jangka lebih panjang semakin berkurang
+dan mendekati nol. Pola penurunan ini sesuai dengan karakteristik proses
+AR(2) yang memang menghasilkan korelasi yang semakin kecil seiring
+bertambahnya lag.
+
+### ARMA (2,2)
+
+### Fungsi Pembangkitan ARMA
+
+Formula umum ARMA: $$
+y_{t} = c + \sum_{i=1}^p \phi_{i}y_{t-i} + \sum_{j=1}^q e_{t-j}+ e_{t}
+$$
+
+Akan dilakukan pembangkitan ARMA dengan $\theta1$=0.4 dan $\theta2$=0.6
+dengan $\phi$=0.5 dan $\phi$=0.2 sebanyak 300 observasi dan $c$=0.
+
+$Y_t = 0.5Y_{t-1} + 0.2Y_{t-2} + e_t + 0.4e_{t-1} + 0.6e_{t-2}$
+
+```{r}
+set.seed(1055)
+n = length(wns)
+theta1 = 0.4
+theta2 = 0.6
+phi1 = 0.5
+phi2 = 0.2
+
+y.arma2=c(1:n)
+for (i in 3:n) {
+  y.arma2[i] <- phi1*y.arma2[i-1] + 
+               phi2*y.arma2[i-2] + 
+               wns[i] + 
+               theta1*wns[i-1] + 
+               theta2*wns[i-2]
+}
+y.arma2
+```
+
+### Pembangkitan dengan arima.sim()
+
+```{r}
+arma22 <- arima.sim(list(order=c(2,0,2), ar=c(0.5, 0.2), ma=c(0.4, 0.6)), n=300)
+arma22
+```
+
+### 3. Karakteristik ARMA (2,2)
+
+### Plot Time Series
+
+```{r}
+par(mfrow = c(1, 2))
+ts.plot(y.arma2)
+ts.plot(arma22)
+```
+
+```{r}
+par(mfrow = c(1, 1))
+```
+
+Berdasarkan plot time series, dapat dilihat bahwa proses ARMA(2,2)
+berfluktuasi di sekitar rata-rata konstan tanpa adanya tren jangka
+panjang, serta memiliki varians yang relatif stabil dari waktu ke waktu.
+Hal ini menunjukkan bahwa data hasil simulasi, baik dari bangkitan
+manual maupun dengan fungsi arima.sim(), bersifat stasioner.
+
+###Plot ACF
+
+```{r}
+par(mfrow = c(1, 2))
+acf(y.arma2)
+acf(arma22)
+```
+
+Berdasarkan plot ACF untuk data hasil simulasi baik dari bangkitan
+manual (y.arma2) maupun dengan fungsi arima.sim() (arma22), terlihat
+bahwa pola autokorelasi menurun secara perlahan *(tails off)* dan tidak
+terhenti secara tiba-tiba pada lag tertentu. Hal ini konsisten dengan
+karakteristik model campuran ARMA, di mana komponen AR cenderung
+menghasilkan pola tails off pada ACF,
+
+### Plot PACF
+
+```{r}
+par(mfrow = c(1, 2))
+pacf(y.arma2)
+pacf(arma22)
+```
+
+Plot PACF untuk y.arma2 dan arma22, terlihat bahwa hanya pada beberapa
+lag awal nilai PACF yang signifikan, kemudian menurun dan berada dalam
+batas interval kepercayaan. Hal ini sesuai dengan sifat model ARMA, di
+mana PACF tidak cut off secara jelas seperti pada murni AR(p), melainkan
+juga menunjukkan pola *tails off.*
+
+### Plot EACF
+
+```{r}
+TSA::eacf(y.arma2)
+```
+
+```{r}
+TSA::eacf(arma22)
+```
+
+Berdasarkan pola segitiga nol pada plot EACF, terlihat bahwa segitiga
+nol pada model ARMA(2,2) hasil simulasi baik dari data bangkitan manual
+ataupun dengan arima.sim() berada pada ordo AR(2) dan ordo MA(2).
+
+### Scatterplot Antar Lag
+
+### Korelasi antara $Y_t$ dengan $Y_t-1$
+
+```{r}
+#Yt
+yt_arma <- arma22[-1]
+yt_arma
+```
+
+```{r}
+#Yt-1
+yt_1_arma <- arma22[-300]
+yt_1_arma
+```
+
+```{r}
+plot(y=yt_arma,x=yt_1_arma)
+```
+
+```{r}
+cor(yt_arma,yt_1_arma)
+```
+
+Hubungan ini sangat kuat dan positif, yang berarti nilai $Y_t$ cenderung
+bergerak searah dengan nilai lag-1 $Y_t-1$ Ketika $Y_t-1$ tinggi, maka
+$Y_t$ juga cenderung tinggi, dan sebaliknya. Pola ini konsisten dengan
+sifat model ARMA, terutama komponen AR yang memasukkan ketergantungan
+kuat pada lag sebelumnya.
+
+### Korelasi antara $Y_t$ dengan $Y_t-2$
+
+```{r}
+#Yt
+yt_arma2 <- arma22[-c(1,2)]
+yt_arma2
+```
+
+```{r}
+#Yt-2
+yt_2_arma <- arma22[-c(299,300)]
+yt_2_arma
+```
+
+```{r}
+plot(y=yt_arma2,x=yt_2_arma)
+```
+
+```{r}
+cor(yt_arma2,yt_2_arma)
+```
+
+Hubungan ini masih cukup kuat dan positif, meskipun tidak sekuat
+korelasi lag-1. Artinya, nilai $Y_t$ masih dipengaruhi oleh nilai dua
+periode sebelumnya $Y_t-2$ tetapi kekuatannya menurun dibanding pengaruh
+lag pertama. Pola ini sejalan dengan karakteristik model AR(2) atau
+ARMA(2,2), di mana ketergantungan tidak hanya muncul pada lag pertama
+tetapi juga lag kedua.
+
+### Korelasi antara $Y_t$ dengan $Y_t-3$
+
+```{r}
+#Yt
+yt_arma3 <- arma22[-c(1,2,3)]
+yt_arma3
+```
+
+```{r}
+#Yt-2
+yt_3_arma <- arma22[-c(298,299,300)]
+yt_3_arma
+```
+
+```{r}
+plot(y=yt_arma3,x=yt_3_arma)
+```
+
+```{r}
+cor(yt_arma3,yt_3_arma)
+```
+
+Hubungan ini masih positif, tetapi semakin melemah dibandingkan lag-1
+dan lag-2. Artinya, nilai $Y_t$ memang masih dipengaruhi oleh nilai tiga
+periode sebelumnya $Y_t-3$ namun pengaruhnya mulai berkurang. Pola
+penurunan korelasi dari lag-1, lag-2, hingga lag-3 ini konsisten dengan
+sifat proses AR(2) atau ARMA(2,2), di mana korelasi secara teoritis akan
+semakin mengecil seiring bertambahnya lag, hingga akhirnya mendekati
+nol.
+
+### Perhitungan Korelasi Teoritis
+
+Model ARMA(2,2):
+
+$$
+Y_t = 0.5 Y_{t-1} + 0.2 Y_{t-2} + e_t + 0.4 e_{t-1} + 0.6 e_{t-2},
+\quad e_t \sim WN(0,\sigma^2)
+$$
+
+Representasi MA($\infty$):
+
+$$
+Y_t = \sum_{j=0}^\infty \psi_j e_{t-j}
+$$
+
+dengan rekursi:
+
+$$
+\psi_0 = 1
+$$
+
+$$
+\psi_1 = 0.5 \cdot \psi_0 + 0.4 = 0.5(1) + 0.4 = 0.9
+$$
+
+$$
+\psi_2 = 0.5 \cdot \psi_1 + 0.2 \cdot \psi_0 + 0.6 = 0.5(0.9) + 0.2(1) + 0.6 = 1.25
+$$
+
+$$
+\psi_j = 0.5 \psi_{j-1} + 0.2 \psi_{j-2}, \quad j \geq 3
+$$
+
+Autokovarians:
+
+$$
+\gamma_k = \sigma^2 \sum_{j=0}^\infty \psi_j \psi_{j+k}
+$$
+
+Autokorelasi:
+
+$$
+\rho_k = \frac{\gamma_k}{\gamma_0}
+$$
+
+Sehingga untuk $k = 1,2,3$:
+
+$$
+\rho_1 = \frac{\gamma_1}{\gamma_0}, \quad
+\rho_2 = \frac{\gamma_2}{\gamma_0}, \quad
+\rho_3 = \frac{\gamma_3}{\gamma_0}
+$$
+
+```{r}
+
+# Parameter
+phi1 <- 0.5
+phi2 <- 0.2
+theta1 <- 0.4
+theta2 <- 0.6
+sigma2 <- 1   #tidak tergantung sigma2
+
+# Banyak psi yang dihitung (M besar untuk aproksimasi)
+M <- 200
+
+# Hitung psi_j
+psi <- numeric(M+1)
+psi[1] <- 1            # psi_0 = 1  -> index 1 di R
+if (M >= 1) psi[2] <- phi1 * psi[1] + theta1  # psi_1
+if (M >= 2) psi[3] <- phi1 * psi[2] + phi2 * psi[1] + theta2  # psi_2
+if (M >= 3) {
+  for (k in 4:(M+1)) { # k di R index = j+1
+    psi[k] <- phi1 * psi[k-1] + phi2 * psi[k-2]
+  }
+}
+
+# Fungsi untuk gamma_k aproksimasi
+gamma_k <- function(k, psi_vec) {
+  # gamma_k = sum_{j=0..M-k} psi_j * psi_{j+k}
+  # indeks R: psi[j+1] * psi[j+k+1]
+  M <- length(psi_vec) - 1
+  s <- 0
+  for (j in 0:(M - k)) {
+    s <- s + psi_vec[j+1] * psi_vec[j+k+1]
+  }
+  return(s * sigma2)
+}
+
+# Hitung gamma_0, gamma_1, gamma_2, gamma_3
+gamma0 <- gamma_k(0, psi)
+gamma1 <- gamma_k(1, psi)
+gamma2 <- gamma_k(2, psi)
+gamma3 <- gamma_k(3, psi)
+
+# Autokorelasi
+rho1 <- gamma1 / gamma0
+rho2 <- gamma2 / gamma0
+rho3 <- gamma3 / gamma0
+
+rho1
+rho2
+rho3
+
+```
