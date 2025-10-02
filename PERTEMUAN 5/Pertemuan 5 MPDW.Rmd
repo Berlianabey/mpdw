@@ -1,0 +1,349 @@
+---
+title: "Mengatasi Ketidakstasioneran"
+author: "Berliana Destari Hermansyah"
+date: "2025-09-26"
+output:
+  rmdformats::readthedown
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r}
+library(ggplot2)
+library(tsibble)
+library(tseries)
+library(MASS)
+library(readxl)
+library(ggpubr)
+```
+
+## Input Data
+
+```{r}
+library(readxl)
+dataiklim <- read_excel("C:/mpdwbos/mpdw/PERTEMUAN 2/dataiklimharian.xlsx", sheet = "iklim")
+head(dataiklim)
+```
+
+```{r}
+print("Struktur Data")
+str(dataiklim)
+print("Contoh Data")
+head(dataiklim, 10)
+
+# Konversi data TAVG menjadi numerik dan cek missing values
+tavg_data <- as.numeric(dataiklim$TAVG)
+
+# Cek missing values
+print("Missing values")
+print(paste("Jumlah total observasi:", length(tavg_data)))
+print(paste("Jumlah missing values (NA):", sum(is.na(tavg_data))))
+print(paste("Persentase missing values:", round(sum(is.na(tavg_data))/length(tavg_data)*100, 2), "%"))
+
+# Posisi missing values 
+if(sum(is.na(tavg_data)) > 0) {
+  na_positions <- which(is.na(tavg_data))
+  print("Posisi missing values:")
+  print(na_positions)
+}
+```
+
+## Cleaning Data
+
+```{r}
+tavg_clean <- na.omit(tavg_data)
+print(paste("jumlah observasi:", length(tavg_clean)))
+```
+
+```{r}
+tavg_ts <- ts(tavg_clean)
+
+print("Statistik Deskriptif")
+print(paste("Jumlah observasi:", length(tavg_ts)))
+print(paste("Mean TAVG:", round(mean(tavg_ts), 4)))
+print(paste("Variance TAVG:", round(var(tavg_ts), 4)))
+print(paste("Min TAVG:", round(min(tavg_ts), 4)))
+print(paste("Max TAVG:", round(max(tavg_ts), 4)))
+```
+
+## Partisi Data menjadi Train dan Test
+
+```{r}
+# Tentukan proporsi data training (misalnya 80% untuk train, 20% untuk test)
+train_size <- floor(0.8 * length(tavg_clean))
+
+# Bagi data
+tavg_train <- tavg_clean[1:train_size]
+tavg_test <- tavg_clean[(train_size + 1):length(tavg_clean)]
+
+# Konversi ke time series
+tavg_train_ts <- ts(tavg_train)
+tavg_test_ts <- ts(tavg_test)
+
+print("=== INFORMASI PARTISI DATA ===")
+print(paste("Total observasi:", length(tavg_clean)))
+print(paste("Data Training:", length(tavg_train_ts), "observasi"))
+print(paste("Data Testing:", length(tavg_test_ts), "observasi"))
+print(paste("Proporsi Train/Test:", round(train_size/length(tavg_clean)*100, 2), "% / ", 
+            round((length(tavg_clean)-train_size)/length(tavg_clean)*100, 2), "%"))
+```
+
+## Visualisasi Partisi Data
+
+```{r}
+# Buat dataframe untuk plotting
+df_partisi <- data.frame(
+  index = 1:length(tavg_clean),
+  value = tavg_clean,
+  partition = c(rep("Train", train_size), rep("Test", length(tavg_test)))
+)
+
+plot_partisi <- ggplot(df_partisi, aes(x = index, y = value, color = partition)) +
+  geom_line() +
+  scale_color_manual(values = c("Train" = "blue", "Test" = "red")) +
+  theme_bw() +
+  xlab("Hari") +
+  ylab("Suhu Rata-rata (Celsius)") +
+  ggtitle("Partisi Data Train dan Test") +
+  theme(legend.position = "top")
+
+print(plot_partisi)
+```
+
+## Analisis Stasioneritas Data Train
+
+## 1. Plot Time Series Data Train
+
+```{r}
+tavg_train_df <- data.frame(
+  index = 1:length(tavg_train_ts),
+  value = as.numeric(tavg_train_ts)
+)
+
+plot_train <- ggplot(tavg_train_df, aes(x = index, y = value)) + 
+  geom_line(color = "blue") + 
+  theme_bw() +
+  xlab("Hari") + 
+  ylab("Suhu Rata-rata (Celsius)") +
+  ggtitle("Plot Time Series Data TRAIN")
+print(plot_train)
+```
+
+**1. Karakteristik Visual:** Data suhu rata-rata harian (TAVG)
+menunjukkan pola fluktuasi yang konsisten sepanjang 99 hari observasi
+training. Suhu bergerak dalam rentang 25.5°C hingga 29°C dengan mean di
+sekitar 27°C.
+
+**A. Stasioner dalam rataan:**
+
+Data tidak menunjukkan trend naik atau turun yang jelas. Mean tetap
+konstan di sekitar 27°C dari awal hingga akhir periode. Fluktuasi
+terjadi secara seimbang di atas dan di bawah garis horizontal mean
+Kesimpulan: Data stasioner dalam rataan karena tidak ada pergeseran
+sistematis mean
+
+**B. Stasioner dalam ragam:**
+
+Amplitudo fluktuasi relatif konsisten sepanjang periode Tidak ada pola
+"funnel shape" atau heteroskedastisitas Variabilitas di awal periode
+(\~3°C) sama dengan di akhir periode (\~2.5-3°C) Kesimpulan: Data
+stasioner dalam ragam karena volatilitas konstan
+
+## 2. Plot ACF Data Train
+
+```{r}
+par(mfrow = c(1, 1))
+acf(tavg_train_ts, main = "Plot ACF Data TRAIN")
+```
+
+### **Karakteristik ACF:**
+
+Plot ACF menunjukkan pola yang sangat khas untuk data dengan
+autokorelasi tinggi:
+
+**A. Lag 0:**
+
+-   ACF = 1.0 (sempurna, karena korelasi data dengan dirinya sendiri)
+
+**B. Lag 1-3:**
+
+-   ACF masih **tinggi dan signifikan** (di atas batas kepercayaan 95%)
+
+-   Lag 1: ACF ≈ 0.15-0.20
+
+-   Lag 2: ACF ≈ 0.18
+
+-   Lag 3: ACF ≈ 0.20 (bahkan lebih tinggi dari lag 1-2)
+
+-   Menunjukkan korelasi positif dengan observasi 1-3 hari sebelumnya
+
+**C. Lag 4 ke atas:**
+
+-   ACF turun cepat dan berada dalam batas kepercayaan (tidak
+    signifikan)
+
+-   ACF berfluktuasi di sekitar nol dengan pola acak
+
+-   Beberapa lag menunjukkan ACF negatif ringan tapi tidak signifikan
+
+### **Interpretasi:**
+
+**1. Pola "Cut-off" vs "Decay Slowly":**
+
+-   ACF menunjukkan pola **"cut-off" setelah lag 3**
+
+-   Jika data tidak stasioner, ACF akan turun lambat (decay slowly) dan
+    tetap signifikan untuk banyak lag
+
+**2. Autokorelasi Jangka Pendek:**
+
+-   Ada **ketergantungan temporal jangka pendek** (lag 1-3)
+
+-   Suhu hari ini dipengaruhi oleh suhu 1-3 hari sebelumnya
+
+-   Ini normal untuk data meteorologi (inersia termal)
+
+**3. Implikasi untuk Pemodelan:**
+
+-   ACF mengindikasikan komponen **MA (Moving Average)** dengan order
+    maksimal q=3
+
+-   Tidak ada autokorelasi jangka panjang yang perlu dikhawatirkan
+
+## 3. Uji ADF Data Train
+
+**Hipotesis:**
+
+-   H₀ (Null Hypothesis): Data tidak stasioner
+
+-   H₁ (Alternative Hypothesis): Data stasioner
+
+```{r}
+adf_train <- adf.test(tavg_train_ts)
+print("=== HASIL UJI ADF DATA TRAIN ===")
+print(adf_train)
+
+if(adf_train$p.value < 0.05) {
+  print("Kesimpulan ADF: Data TRAIN STASIONER dalam rataan (p-value < 0.05)")
+} else {
+  print("Kesimpulan ADF: Data TRAIN TIDAK STASIONER dalam rataan (p-value >= 0.05)")
+}
+```
+
+**A. Statistik Uji:**
+
+-   Dickey-Fuller statistic = -4.5529
+
+-   Nilai ini sangat negatif dan jauh dari 0
+
+-   Semakin negatif nilai DF, semakin kuat bukti stasioneritas
+
+**B. P-value:**
+
+-   **p-value = 0.01** (sangat kecil, \< 0.05)
+
+-   P-value yang sangat kecil ini memberikan **bukti sangat kuat untuk
+    menolak H₀**
+
+**C. Lag Order:**
+
+-   Lag order = 4 dipilih otomatis oleh algoritma ADF
+
+### **Kesimpulan Uji ADF:**
+
+Tolak H₀ dengan sangat kuat. Data train stasioner dalam rataan (p-value
+= 0.01 \< 0.05).
+
+-   Mean data tidak bergeser seiring waktu
+
+-   Tidak ada trend deterministik atau stokastik
+
+-   Data dapat langsung digunakan untuk pemodelan tanpa transformasi
+    differencing
+
+## 4. Plot Box-Cox Data Train
+
+```{r}
+# Pastikan data positif untuk Box-Cox
+if(min(tavg_train_ts) <= 0) {
+  tavg_train_positive <- tavg_train_ts - min(tavg_train_ts) + 1
+  print("Data train digeser agar positif untuk analisis Box-Cox")
+} else {
+  tavg_train_positive <- tavg_train_ts
+}
+
+index_train <- seq(1:length(tavg_train_positive))
+
+# Box-Cox transformation
+bc_train <- boxcox(tavg_train_positive ~ index_train, lambda = seq(-2, 4, by = 0.01))
+
+# Nilai lambda optimum
+lambda_train_opt <- bc_train$x[which.max(bc_train$y)]
+print(paste("Lambda optimum (Train):", round(lambda_train_opt, 3)))
+
+# Selang kepercayaan 95% untuk lambda
+ci_lambda_train <- bc_train$x[bc_train$y > max(bc_train$y) - 0.5 * qchisq(0.95, 1)]
+ci_lower_train <- min(ci_lambda_train)
+ci_upper_train <- max(ci_lambda_train)
+
+print(paste("Selang kepercayaan 95% lambda (Train): [", 
+            round(ci_lower_train, 3), ",", round(ci_upper_train, 3), "]"))
+
+if(ci_lower_train <= 1 && ci_upper_train >= 1) {
+  print("Kesimpulan Box-Cox: Data TRAIN STASIONER dalam ragam (selang memuat 1)")
+} else {
+  print("Kesimpulan Box-Cox: Data TRAIN TIDAK STASIONER dalam ragam (selang tidak memuat 1)")
+}
+```
+
+### **Karakteristik Plot:**
+
+Plot menampilkan kurva log-likelihood untuk berbagai nilai lambda
+transformasi Box-Cox dalam rentang -2 hingga 4.
+
+**A. Bentuk Kurva:**
+
+-   Kurva **smooth dan berbentuk parabola terbalik**
+
+-   Kurva naik dari lambda = -2, mencapai puncak di sekitar lambda =
+    2.86, lalu turun menuju lambda = 4
+
+**B. Lambda Optimum:**
+
+-   **λ_opt = 2.86**
+
+-   Ini adalah nilai lambda yang **memaksimalkan log-likelihood**
+
+-   Artinya transformasi Y\^2.86 secara teoritis paling baik untuk
+    menormalkan varians
+
+**C. Selang Kepercayaan 95%:**
+
+-   **CI = [-2, 4]**
+
+-   Garis putus-putus horizontal menunjukkan batas selang kepercayaan
+
+### **Interpretasi:**
+
+**1. Status Stasioneritas dalam Ragam:**
+
+-   Ketika CI memuat 1, artinya tidak ada bukti bahwa varians tidak
+    konstan
+
+-   λ = 1 berarti tidak perlu transformasi (karena Y\^1 = Y, data asli)
+
+**2. Lambda Optimum = 2.86:**
+
+-   Meskipun λ_opt = 2.86, tidak perlu ke transformasi Y\^2.86
+
+-   Ini menunjukkan ketidakpastian tinggi dalam estimasi lambda optimal
+
+**3. Selang Kepercayaan Sangat Lebar [-2, 4]:**
+
+-   Ini adalah indikator positif untuk kestasioneran
+
+-   Artinya berbagai transformasi (dari Y\^(-2) hingga Y\^4) memberikan
+    hasil log-likelihood yang tidak jauh berbeda
+
+-    Data sudah memenuhi asumsi homoskedastisitas
