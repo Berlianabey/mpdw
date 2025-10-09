@@ -1,0 +1,593 @@
+---
+title: "Mengatasi Ketidakstasioneran"
+author: "Berliana Destari Hermansyah"
+date: "2025-09-26"
+output: html_document
+---
+
+```{r}
+library(ggplot2)
+library(tsibble)
+library(tseries)
+library(MASS)
+library(readxl)
+library(ggpubr)
+library(forecast)  
+library(TSA)       
+```
+
+## Input Data
+
+```{r}
+library(readxl)
+dataiklim <- read_excel("C:/mpdwbos/mpdw/PERTEMUAN 2/dataiklimharian.xlsx", sheet = "iklim")
+head(dataiklim)
+```
+
+```{r}
+print("Struktur Data")
+str(dataiklim)
+print("Contoh Data")
+head(dataiklim, 10)
+
+# Konversi data TAVG menjadi numerik dan cek missing values
+tavg_data <- as.numeric(dataiklim$TAVG)
+
+# Cek missing values
+print("Missing values")
+print(paste("Jumlah total observasi:", length(tavg_data)))
+print(paste("Jumlah missing values (NA):", sum(is.na(tavg_data))))
+print(paste("Persentase missing values:", round(sum(is.na(tavg_data))/length(tavg_data)*100, 2), "%"))
+
+# Posisi missing values 
+if(sum(is.na(tavg_data)) > 0) {
+  na_positions <- which(is.na(tavg_data))
+  print("Posisi missing values:")
+  print(na_positions)
+}
+```
+
+## Cleaning Data
+
+```{r}
+tavg_clean <- na.omit(tavg_data)
+print(paste("jumlah observasi:", length(tavg_clean)))
+```
+
+```{r}
+tavg_ts <- ts(tavg_clean)
+
+print("Statistik Deskriptif")
+print(paste("Jumlah observasi:", length(tavg_ts)))
+print(paste("Mean TAVG:", round(mean(tavg_ts), 4)))
+print(paste("Variance TAVG:", round(var(tavg_ts), 4)))
+print(paste("Min TAVG:", round(min(tavg_ts), 4)))
+print(paste("Max TAVG:", round(max(tavg_ts), 4)))
+```
+
+## Partisi Data menjadi Train dan Test
+
+```{r}
+# Tentukan proporsi data training (misalnya 80% untuk train, 20% untuk test)
+train_size <- floor(0.8 * length(tavg_clean))
+
+# Bagi data
+tavg_train <- tavg_clean[1:train_size]
+tavg_test <- tavg_clean[(train_size + 1):length(tavg_clean)]
+
+# Konversi ke time series
+tavg_train_ts <- ts(tavg_train)
+tavg_test_ts <- ts(tavg_test)
+
+print("=== INFORMASI PARTISI DATA ===")
+print(paste("Total observasi:", length(tavg_clean)))
+print(paste("Data Training:", length(tavg_train_ts), "observasi"))
+print(paste("Data Testing:", length(tavg_test_ts), "observasi"))
+print(paste("Proporsi Train/Test:", round(train_size/length(tavg_clean)*100, 2), "% / ", 
+            round((length(tavg_clean)-train_size)/length(tavg_clean)*100, 2), "%"))
+```
+
+## Visualisasi Partisi Data
+
+```{r}
+# Buat dataframe untuk plotting
+df_partisi <- data.frame(
+  index = 1:length(tavg_clean),
+  value = tavg_clean,
+  partition = c(rep("Train", train_size), rep("Test", length(tavg_test)))
+)
+
+plot_partisi <- ggplot(df_partisi, aes(x = index, y = value, color = partition)) +
+  geom_line() +
+  scale_color_manual(values = c("Train" = "blue", "Test" = "red")) +
+  theme_bw() +
+  xlab("Hari") +
+  ylab("Suhu Rata-rata (Celsius)") +
+  ggtitle("Partisi Data Train dan Test") +
+  theme(legend.position = "top")
+
+print(plot_partisi)
+```
+
+## Analisis Stasioneritas Data Train
+
+## 1. Plot Time Series Data Train
+
+```{r}
+tavg_train_df <- data.frame(
+  index = 1:length(tavg_train_ts),
+  value = as.numeric(tavg_train_ts)
+)
+
+plot_train <- ggplot(tavg_train_df, aes(x = index, y = value)) + 
+  geom_line(color = "blue") + 
+  theme_bw() +
+  xlab("Hari") + 
+  ylab("Suhu Rata-rata (Celsius)") +
+  ggtitle("Plot Time Series Data TRAIN")
+print(plot_train)
+```
+
+**1. Karakteristik Visual:** Data suhu rata-rata harian (TAVG)
+menunjukkan pola fluktuasi yang konsisten sepanjang 99 hari observasi
+training. Suhu bergerak dalam rentang 25.5°C hingga 29°C dengan mean di
+sekitar 27°C.
+
+**A. Stasioner dalam rataan:**
+
+Data tidak menunjukkan trend naik atau turun yang jelas. Mean tetap
+konstan di sekitar 27°C dari awal hingga akhir periode. Fluktuasi
+terjadi secara seimbang di atas dan di bawah garis horizontal mean
+Kesimpulan: Data stasioner dalam rataan karena tidak ada pergeseran
+sistematis mean
+
+**B. Stasioner dalam ragam:**
+
+Amplitudo fluktuasi relatif konsisten sepanjang periode Tidak ada pola
+"funnel shape" atau heteroskedastisitas Variabilitas di awal periode
+(\~3°C) sama dengan di akhir periode (\~2.5-3°C) Kesimpulan: Data
+stasioner dalam ragam karena volatilitas konstan
+
+## 2. Plot ACF Data Train
+
+```{r}
+par(mfrow = c(1, 1))
+acf(tavg_train_ts, main = "Plot ACF Data TRAIN")
+```
+
+### **Karakteristik ACF:**
+
+Plot ACF menunjukkan pola yang sangat khas untuk data dengan
+autokorelasi tinggi:
+
+**A. Lag 0:**
+
+-   ACF = 1.0 (sempurna, karena korelasi data dengan dirinya sendiri)
+
+**B. Lag 1-3:**
+
+-   ACF masih **tinggi dan signifikan** (di atas batas kepercayaan 95%)
+
+-   Lag 1: ACF ≈ 0.15-0.20
+
+-   Lag 2: ACF ≈ 0.18
+
+-   Lag 3: ACF ≈ 0.20 (bahkan lebih tinggi dari lag 1-2)
+
+-   Menunjukkan korelasi positif dengan observasi 1-3 hari sebelumnya
+
+**C. Lag 4 ke atas:**
+
+-   ACF turun cepat dan berada dalam batas kepercayaan (tidak
+    signifikan)
+
+-   ACF berfluktuasi di sekitar nol dengan pola acak
+
+-   Beberapa lag menunjukkan ACF negatif ringan tapi tidak signifikan
+
+### **Interpretasi:**
+
+**1. Pola "Cut-off" vs "Decay Slowly":**
+
+-   ACF menunjukkan pola **"cut-off" setelah lag 3**
+
+-   Jika data tidak stasioner, ACF akan turun lambat (decay slowly) dan
+    tetap signifikan untuk banyak lag
+
+**2. Autokorelasi Jangka Pendek:**
+
+-   Ada **ketergantungan temporal jangka pendek** (lag 1-3)
+
+-   Suhu hari ini dipengaruhi oleh suhu 1-3 hari sebelumnya
+
+-   Ini normal untuk data meteorologi (inersia termal)
+
+**3. Implikasi untuk Pemodelan:**
+
+-   ACF mengindikasikan komponen **MA (Moving Average)** dengan order
+    maksimal q=3
+
+-   Tidak ada autokorelasi jangka panjang yang perlu dikhawatirkan
+
+## 3. Uji ADF Data Train
+
+**Hipotesis:**
+
+-   H₀ (Null Hypothesis): Data tidak stasioner
+
+-   H₁ (Alternative Hypothesis): Data stasioner
+
+```{r}
+adf_train <- adf.test(tavg_train_ts)
+print("=== HASIL UJI ADF DATA TRAIN ===")
+print(adf_train)
+
+if(adf_train$p.value < 0.05) {
+  print("Kesimpulan ADF: Data TRAIN STASIONER dalam rataan (p-value < 0.05)")
+} else {
+  print("Kesimpulan ADF: Data TRAIN TIDAK STASIONER dalam rataan (p-value >= 0.05)")
+}
+```
+
+**A. Statistik Uji:**
+
+-   Dickey-Fuller statistic = -4.5529
+
+-   Nilai ini sangat negatif dan jauh dari 0
+
+-   Semakin negatif nilai DF, semakin kuat bukti stasioneritas
+
+**B. P-value:**
+
+-   **p-value = 0.01** (sangat kecil, \< 0.05)
+
+-   P-value yang sangat kecil ini memberikan **bukti sangat kuat untuk
+    menolak H₀**
+
+**C. Lag Order:**
+
+-   Lag order = 4 dipilih otomatis oleh algoritma ADF
+
+### **Kesimpulan Uji ADF:**
+
+Tolak H₀ dengan sangat kuat. Data train stasioner dalam rataan (p-value
+= 0.01 \< 0.05).
+
+-   Mean data tidak bergeser seiring waktu
+
+-   Tidak ada trend deterministik atau stokastik
+
+-   Data dapat langsung digunakan untuk pemodelan tanpa transformasi
+    differencing
+
+## 4. Plot Box-Cox Data Train
+
+```{r}
+# Pastikan data positif untuk Box-Cox
+if(min(tavg_train_ts) <= 0) {
+  tavg_train_positive <- tavg_train_ts - min(tavg_train_ts) + 1
+  print("Data train digeser agar positif untuk analisis Box-Cox")
+} else {
+  tavg_train_positive <- tavg_train_ts
+}
+
+index_train <- seq(1:length(tavg_train_positive))
+
+# Box-Cox transformation
+bc_train <- boxcox(tavg_train_positive ~ index_train, lambda = seq(-2, 4, by = 0.01))
+
+# Nilai lambda optimum
+lambda_train_opt <- bc_train$x[which.max(bc_train$y)]
+print(paste("Lambda optimum (Train):", round(lambda_train_opt, 3)))
+
+# Selang kepercayaan 95% untuk lambda
+ci_lambda_train <- bc_train$x[bc_train$y > max(bc_train$y) - 0.5 * qchisq(0.95, 1)]
+ci_lower_train <- min(ci_lambda_train)
+ci_upper_train <- max(ci_lambda_train)
+
+print(paste("Selang kepercayaan 95% lambda (Train): [", 
+            round(ci_lower_train, 3), ",", round(ci_upper_train, 3), "]"))
+
+if(ci_lower_train <= 1 && ci_upper_train >= 1) {
+  print("Kesimpulan Box-Cox: Data TRAIN STASIONER dalam ragam (selang memuat 1)")
+} else {
+  print("Kesimpulan Box-Cox: Data TRAIN TIDAK STASIONER dalam ragam (selang tidak memuat 1)")
+}
+```
+
+### **Karakteristik Plot:**
+
+Plot menampilkan kurva log-likelihood untuk berbagai nilai lambda
+transformasi Box-Cox dalam rentang -2 hingga 4.
+
+**A. Bentuk Kurva:**
+
+-   Kurva **smooth dan berbentuk parabola terbalik**
+
+-   Kurva naik dari lambda = -2, mencapai puncak di sekitar lambda =
+    2.86, lalu turun menuju lambda = 4
+
+**B. Lambda Optimum:**
+
+-   **λ_opt = 2.86**
+
+-   Ini adalah nilai lambda yang **memaksimalkan log-likelihood**
+
+-   Artinya transformasi Y\^2.86 secara teoritis paling baik untuk
+    menormalkan varians
+
+**C. Selang Kepercayaan 95%:**
+
+-   **CI = [-2, 4]**
+
+-   Garis putus-putus horizontal menunjukkan batas selang kepercayaan
+
+### **Interpretasi:**
+
+**1. Status Stasioneritas dalam Ragam:**
+
+-   Ketika CI memuat 1, artinya tidak ada bukti bahwa varians tidak
+    konstan
+
+-   λ = 1 berarti tidak perlu transformasi (karena Y\^1 = Y, data asli)
+
+**2. Lambda Optimum = 2.86:**
+
+-   Meskipun λ_opt = 2.86, tidak perlu ke transformasi Y\^2.86
+
+-   Ini menunjukkan ketidakpastian tinggi dalam estimasi lambda optimal
+
+**3. Selang Kepercayaan Sangat Lebar [-2, 4]:**
+
+-   Ini adalah indikator positif untuk kestasioneran
+
+-   Artinya berbagai transformasi (dari Y\^(-2) hingga Y\^4) memberikan
+    hasil log-likelihood yang tidak jauh berbeda
+
+-   Data sudah memenuhi asumsi homoskedastisitas
+
+
+## 5. Spesifikasi Model
+```{r}
+par(mfrow = c(1,2))
+acf(tavg_train, main="ACF", lag.max=20) #ARIMA(0,0,2)
+pacf(tavg_train, main="PACF", lag.max=20) #ARIMA(1,0,0)
+```
+Berdasarkan plot tersebut, terlihat bahwa plot ACF cenderung cuts off pada lag ke-1, sedangkan plot PACF tampak tails off. Pola ini menunjukkan bahwa komponen moving average (MA) lebih dominan dibanding autoregressive (AR).
+
+Dengan demikian, model tentatif yang sesuai adalah ARIMA(0,1,1),
+karena ACF cut off pada lag pertama (menandakan MA(1)) dan PACF tailing off (menandakan tidak adanya komponen AR yang signifikan).
+
+```{r}
+par(mfrow = c(1,1))
+```
+
+```{r}
+is.ts(tavg_train_ts)
+```
+
+```{r}
+library(TSA)
+eacf(tavg_train_ts)
+```
+Dengan demikian, berdasarkan hasil analisis EACF, model tentatif yang paling mungkin sesuai dengan data adalah ARIMA(1,0,2), ARIMA(2,0,2), dan ARIMA(3,0,2), yang selanjutnya akan diuji pada tahap pendugaan parameter dan evaluasi diagnostik.
+
+## 6. Pendugaan Parameter Model Tentatif
+## 6.1 ARIMA(0,1,1)
+
+
+```{r}
+model1.tavg=Arima(tavg_train_ts, order=c(0,1,1),method="ML")
+summary(model1.tavg) #AIC=227.86  
+```
+## 6.2 ARIMA(1,0,2)
+```{r}
+model2.tavg=Arima(tavg_train, order=c(1,0,2),method="ML")
+summary(model2.tavg) #AIC=220.56
+```
+## 6.3 ARIMA(2,0,2)
+```{r}
+model3.tavg=Arima(tavg_train_ts, order=c(2,0,2),method="ML")
+summary(model3.tavg) #AIC=219.7
+```
+## 6.4 ARIMA(3,0,2)
+```{r}
+model4.tavg=Arima(tavg_train_ts, order=c(3,0,2),method="ML")
+summary(model4.tavg) #AIC=221.7 
+```
+
+## Ringkasan AIC
+```{r}
+model_tentatif <- data.frame(
+  Model = c("ARIMA(0,1,1)","ARIMA(1,0,2)","ARIMA(2,0,2)", "ARIMA(3,0,2)"),
+  AIC   = c(AIC(model1.tavg),AIC(model2.tavg), AIC(model3.tavg), AIC(model4.tavg)),
+  BIC   = c(BIC(model1.tavg),BIC(model2.tavg), BIC(model3.tavg), BIC(model4.tavg))
+)
+
+model_tentatif
+```
+Berdasarkan hasil perhitungan, terdapat beberapa model tentatif yang mungkin sesuai dengan data, yaitu ARIMA(0,1,1),ARIMA(1,0,2), ARIMA(2,0,2), dan ARIMA(3,0,2). Berdasarkan nilai AIC yang paling rendah, model terbaik sementara adalah ARIMA(1,0,2) atau ARIMA(2,0,2).
+
+## 7. Eksplorasi Sisaan
+```{r}
+sisaan.tavg <- model2.tavg$residuals
+
+par(mfrow = c(2,2),    
+    mar = c(4,4,2,1),  
+    oma = c(0,0,2,0))  
+
+# Q-Q Plot
+qqnorm(sisaan.tavg, main = "Normal Q-Q Plot")
+qqline(sisaan.tavg, col = "blue", lwd = 2)
+
+# Plot Sisaan vs Waktu
+plot(sisaan.tavg, type = "p",
+     main = "Plot Sisaan vs Waktu",
+     xlab = "Waktu", ylab = "Sisaan")
+
+# ACF
+acf(sisaan.tavg, main = "ACF Sisaan")
+
+# PACF
+pacf(sisaan.tavg, main = "PACF Sisaan")
+```
+
+```{r}
+sisaan.tavg <- model3.tavg$residuals
+
+par(mfrow = c(2,2),    
+    mar = c(4,4,2,1),  
+    oma = c(0,0,2,0))  
+
+# Q-Q Plot
+qqnorm(sisaan.tavg, main = "Normal Q-Q Plot")
+qqline(sisaan.tavg, col = "blue", lwd = 2)
+
+# Plot Sisaan vs Waktu
+plot(sisaan.tavg, type = "p",
+     main = "Plot Sisaan vs Waktu",
+     xlab = "Waktu", ylab = "Sisaan")
+
+# ACF
+acf(sisaan.tavg, main = "ACF Sisaan")
+
+# PACF
+pacf(sisaan.tavg, main = "PACF Sisaan")
+```
+Berdasarkan plot kuantil-kuantil normal (Normal Q-Q Plot), terlihat bahwa titik-titik residu menyebar sangat dekat dengan garis diagonal, sehingga secara visual residu berdistribusi normal tanpa adanya penyimpangan berarti pada bagian ekor. Kemudian, plot sisaan terhadap waktu menunjukkan bahwa residu berfluktuasi secara acak di sekitar nol tanpa pola tertentu, menandakan bahwa tidak terdapat autokorelasi maupun perubahan ragam yang sistematis dari waktu ke waktu. Plot ACF dan PACF sisaan, terlihat bahwa seluruh spike berada di dalam batas kepercayaan (±0.2), yang berarti tidak ada autokorelasi signifikan pada lag mana pun. Hal ini mengindikasikan bahwa residu bersifat white noise, atau dengan kata lain, model telah mampu menangkap seluruh pola dalam data.Dengan demikian, secara keseluruhan dapat disimpulkan bahwa model ARIMA(2,0,2) maupun ARIMA(3,0,2) memiliki performa yang baik karena menghasilkan residu yang acak, berdistribusi normal, dan memenuhi asumsi white noise.
+
+```{r}
+#1) Sisaan Menyebar Normal 
+ks.test(sisaan.tavg,"pnorm")  #gagal tolak H0 > sisaan menyebar normal
+```
+
+Selain dengan eksplorasi, asumsi tersebut dapat diuji menggunakan uji formal. Pada tahapan ini, uji formal yang digunakan untuk menguji kenormalan adalah uji Kolmogorov–Smirnov (KS). Hipotesis yang digunakan dalam uji KS adalah sebagai berikut.
+H0: Sisaan menyebar normal
+H1: Sisaan tidak menyebar normal
+Berdasarkan hasil uji KS, diperoleh p-value sebesar 0.1141 yang lebih besar dari taraf nyata 5% (0.05). Dengan demikian, gagal menolak H0 yang berarti sisaan berdistribusi normal. Hasil ini sejalan dengan plot kuantil-kuantil normal, di mana titik-titik residu tampak mengikuti garis diagonal, sehingga secara visual maupun formal dapat disimpulkan bahwa asumsi kenormalan residu terpenuhi.
+
+```{r}
+#2) Sisaan saling bebas/tidak ada autokorelasi 
+Box.test(sisaan.tavg, type = "Ljung")  #gagal tolak H0 > sisaan saling bebas
+```
+
+Selain kenormalan, asumsi lain yang perlu diuji adalah kebebasan sisaan (white noise assumption). Uji formal yang digunakan untuk menguji ada tidaknya autokorelasi pada sisaan adalah uji Box–Ljung. Hipotesis yang digunakan adalah sebagai berikut.
+1. H0: Tidak ada autokorelasi pada sisaan
+2. H1: Terdapat autokorelasi pada sisaan
+Berdasarkan hasil uji Box–Ljung, diperoleh p-value sebesar 0.9928 yang jauh lebih besar dari taraf nyata 5% (0.05). Dengan demikian, gagal menolak H0, yang berarti tidak terdapat autokorelasi pada sisaan. Hasil ini sejalan dengan plot ACF dan PACF sisaan, di mana tidak tampak spike yang signifikan. Oleh karena itu, dapat disimpulkan bahwa sisaan telah memenuhi asumsi white noise, sehingga model ARIMA yang dipilih sudah sesuai untuk data yang dianalisis.
+
+```{r}
+Box.test((sisaan.tavg)^2, type = "Ljung")  #gagal tolak H0 > sisaan homogen
+```
+1. H0: Ragam sisaan homogen
+2. H1: Ragam sisaan tidak homogen
+Berdasarkan uji Ljung–Box terhadap sisaan kuadrat, diperoleh p-value sebesar 0.6778 yang lebih besar dari taraf nyata 5% (0.05) sehingga gagal menolak H0 dan menandakan bahwa ragam sisaan bersifat homogen. Dengan demikian, dapat disimpulkan bahwa tidak terdapat heteroskedastisitas pada sisaan, atau dengan kata lain asumsi kehomogenan ragam terpenuhi pada model ARIMA yang digunakan.
+
+```{r}
+#4) Nilai tengah sisaan sama dengan nol 
+t.test(sisaan.tavg, mu = 0, conf.level = 0.95)  #gagal tolak h0 > nilai tengah sisaan sama dengan 0
+```
+1. H0: nilai tengah sisaan sama dengan 0
+2. H1: nilai tengah sisaan tidak sama dengan 0
+Berdasarkan hasil uji t satu sampel (One Sample t-test), diperoleh nilai p-value sebesar 0.9875 yang lebih besar dari taraf nyata 5% (0.05). Dengan demikian, gagal menolak H0 dan dapat disimpulkan bahwa rata-rata sisaan tidak berbeda signifikan dari nol. Hal ini menunjukkan bahwa model tidak memiliki bias sistematis, atau dengan kata lain prediksi model ARIMA sudah tidak menyisakan pola tertentu dalam rata-rata sisaan.
+
+## 8. Overfitting
+Overfitting dilakukan dengan menaikkan orde AR(p) dan MA(q) dari model sebelumnya menjadi ARIMA(2,0,2). Berdasarkan hasil estimasi, model ini memiliki AIC sebesar 219.7 dan BIC sebesar 235.27, yang tidak menunjukkan perbaikan signifikan dibandingkan model ARIMA(1,0,2). Selain itu, beberapa koefisien memiliki nilai standar error yang cukup besar, menandakan ketidakstabilan estimasi. Oleh karena itu, model ARIMA(2,0,2) dianggap mengalami overfitting dan tidak dipilih sebagai model terbaik.
+```{r}
+model3.tavg=Arima(tavg_train, order=c(2,0,2),method="ML")
+summary(model3.tavg) #AIC=219.7 
+```
+```{r}
+lmtest::coeftest(model3.tavg) #tidak ada parameter signifikan
+```
+
+## 9. Peramalan
+```{r}
+ramalan.tavg <- predict(model3.tavg, n.ahead = length(tavg_test_ts))
+```
+
+```{r}
+# Pastikan library forecast sudah dipanggil
+library(forecast)
+
+# Lakukan peramalan berdasarkan model tavg
+ramalan.tavg <- forecast::forecast(model3.tavg, h = length(tavg_test_ts))
+
+# Ekstrak nilai hasil peramalan
+data.ramalan.tavg <- ramalan.tavg$mean
+
+# Plot hasil ramalan
+plot(ramalan.tavg,
+     main = "Peramalan Suhu Rata-Rata Harian (TAVG)",
+     xlab = "Hari",
+     ylab = "Suhu Rata-rata (°C)",
+     col = "blue",
+     fcol = "skyblue",
+     flty = 2,
+     lwd = 2)
+
+# Tambahkan garis aktual (data testing)
+lines(tavg_test_ts, col = "red", lwd = 2)
+
+# Tambahkan legenda
+legend("topleft",
+       legend = c("Data Training", "Ramalan", "Data Aktual (Testing)"),
+       col = c("black", "blue", "red"),
+       lty = c(1, 2, 1),
+       lwd = 2,
+       bty = "n")
+
+```
+
+```{r}
+# Inverse differencing untuk data TAVG
+pt_akhir_train <- tail(tavg_train_ts, 1)  # titik terakhir data training
+
+forecast_tavg <- diffinv(data.ramalan.tavg, differences = 1, xi = pt_akhir_train)
+
+# Hapus nilai pertama hasil diffinv karena hanya pengembalian awal
+hasil_tavg <- forecast_tavg[-1]
+
+# Pastikan panjang hasil sesuai dengan data testing
+hasil_tavg <- hasil_tavg[1:length(tavg_test_ts)]
+
+# Bandingkan data aktual vs hasil forecast
+perbandingan_tavg <- cbind(
+  Aktual   = tavg_test_ts,
+  Forecast = hasil_tavg
+)
+
+# Tampilkan 10 observasi pertama
+print(head(perbandingan_tavg, 10))
+
+```
+```{r}
+# Hitung akurasi data testing
+akurasi_tavg_test <- accuracy(hasil_tavg, tavg_test_ts)
+akurasi_tavg_test
+
+```
+```{r}
+# Plot data aktual suhu rata-rata
+ts.plot(tavg_test_ts, col = "black", lty = 1,
+        xlab = "Waktu", ylab = "Suhu Rata-rata (°C)",
+        main = "Plot Data Aktual dan Forecast TAVG")
+
+# Garis forecast (otomatis mulai dari akhir data training)
+start_forecast <- length(tavg_train_ts) + 1
+end_forecast <- length(tavg_train_ts) + length(hasil_tavg)
+
+lines(start_forecast:end_forecast, hasil_tavg,
+      col = "blue", lty = 2, lwd = 2)
+
+# Tambahkan legenda
+legend("topleft",
+       legend = c("Data Aktual", "Forecast"),
+       col = c("black", "blue"),
+       lty = c(1, 2),
+       lwd = c(1, 2),
+       bty = "n")
+
+```
+
+Berdasarkan plot antara data aktual dan hasil peramalan suhu rata-rata (TAVG), terlihat bahwa model menghasilkan pola ramalan yang relatif searah dengan data aktual. Meskipun terdapat sedikit deviasi pada beberapa titik waktu, nilai peramalan tetap berada di sekitar nilai aktual. Hal ini menunjukkan bahwa model ARIMA yang digunakan cukup mampu merepresentasikan pola pergerakan suhu rata-rata pada periode pengamatan.
